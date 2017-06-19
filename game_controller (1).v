@@ -1,0 +1,222 @@
+//ECE6370 Advanced Digital Design
+// Author: Maanasa Mohanambal Sathianarayanan
+// PSID: 0583
+
+//-----Game Controller------ 
+
+
+module game_controller(clk,rst,Allow_A, Allow_B, start, In_A,In_B,load_A,load_B, request_seq, rand_Q, Score_A,Score_B,timeover,time_enter,sequence_done,
+                           Addpoints_A,Addpoints_B, timer_start,request_Q, reg_seq, pause,restart,GameOver, GetMaxScore,A,B);
+
+input clk, rst, Allow_A,Allow_B, start, timeover,load_A,load_B;  
+input [2:0] In_A, In_B;
+input [3:0] Score_A, Score_B;
+
+input [2:0] rand_Q;
+input time_enter,sequence_done;
+ 
+output reg  Addpoints_A,Addpoints_B, timer_start, request_Q;
+output reg [4:0]reg_seq; 
+output reg  pause,restart, GameOver, GetMaxScore,request_seq;
+output reg [2:0]A,B;
+
+reg [2:0]reg_Q;
+reg [4:0]State;
+reg [2:0] cnt;
+reg Flag_A, Flag_B;
+
+parameter INIT =0, RESTART_STATE = 1, ENTER_TIME_STATE=2, START_STATE = 3,REQUEST = 4, WAIT_STATE_1= 5, 
+COMPUTATIONAL_STATE = 6, WAIT_STATE_2 = 7, FETCH_STATE =8,LOAD_STATE = 9,  CHECK_MATCH_STATE = 10, CHECK_TIME_STATE = 11;
+
+always@(posedge clk)
+ begin
+   if(rst == 0)
+      begin
+        Addpoints_A <=0; Addpoints_B <=0;
+        timer_start<=0;
+        reg_seq<=4'b0000;
+	reg_Q <= 4'b0000;
+      end
+   else
+    begin
+     State<=INIT; 
+     case(State)
+
+  //---- State 1: INIT -----
+     INIT: 
+         begin
+           if(Allow_A ==1 && Allow_B == 1)
+            begin  
+           	Addpoints_A <=0; Addpoints_B <=0;
+                timer_start<=0;		
+		State <= ENTER_TIME_STATE;
+            end
+          else
+            begin
+             State<=INIT;
+            end
+         end
+
+//-------- State 2: RESTART_STATE ----- 
+  RESTART_STATE:
+    begin
+      if (start == 1)
+        begin	
+         restart <=0;
+	 GameOver<=0;
+	 GetMaxScore<=0;
+         State <= ENTER_TIME_STATE;
+        end
+    end
+
+//-------- State 3: ENTER_TIME_STATE ----- 
+   ENTER_TIME_STATE:
+      begin
+	restart <= 1;
+	 if(time_enter ==1)
+ 	  begin
+	   State<= START_STATE;
+          end
+       end
+//-------- State 4: START STATE ----- 
+     
+     START_STATE:
+        begin
+           if (start==1)
+           begin
+	    A <=0; B<=0;
+	    Addpoints_A <=0; Addpoints_B <=0;
+	    pause <=0;
+	    State <= REQUEST;
+           end
+         else
+          begin
+           State <= START_STATE;  
+         end
+       end
+
+// ------- State 5: REQUEST-------
+  REQUEST:  
+    begin
+      request_seq <=1;
+      State<=WAIT_STATE_1;
+    end
+
+
+// ------- State 6: WAIT_STATE 1-------
+    WAIT_STATE_1:
+        begin
+	State<= COMPUTATIONAL_STATE;
+	end
+
+//-------- State 7: COMPUTATIONAL STATE ----- 
+    COMPUTATIONAL_STATE:
+       begin
+       	 if(sequence_done == 1)    // if count != 5
+	  begin
+	  request_seq <=0;  // Stop requesting sequence from RNG 1 
+          request_Q <=1;
+	  State <= WAIT_STATE_2;
+	  end
+        else 
+	  begin
+          State <=  COMPUTATIONAL_STATE ;
+ 	  end
+       end
+   
+// ------- State 8:WAIT STATE 2-------
+    WAIT_STATE_2:
+        begin
+        request_Q <=0;
+	State<= FETCH_STATE;
+	end     
+
+// ------- State 9:FETCH STATE-------
+   FETCH_STATE: 
+      begin
+	 timer_start <=1; // Once the random number is generated for question, the game starts and timer also starts couting 
+	 reg_Q <= rand_Q; // gets the number from memory and stores locally 	 
+			  //(wire the output from RNG2 to memory and get the value from memory and then store it) 
+        	 	  // display this in Question Seven segment display	
+	State<= LOAD_STATE;
+      end
+
+// ------- State 10:LOAD_STATE------
+   LOAD_STATE:
+      begin
+	if(load_A == 1)
+            begin
+	     Flag_A <= 1;
+	     A <= In_A;
+             State <= CHECK_MATCH_STATE;
+            end
+         else
+          begin
+           if(load_B == 1)
+             begin
+	      Flag_B <= 1;
+	      B<=In_B;
+              State <= CHECK_MATCH_STATE;
+             end
+            else
+             begin
+              State <= LOAD_STATE;
+             end
+           end
+         end
+          
+         
+//-------- State 11: CHECK SUM STATE ----- 
+     CHECK_MATCH_STATE:
+       begin
+	if(Flag_A ==1)
+         begin
+          if(A == reg_Q)
+            begin
+              Addpoints_A <=1;  //to make the Score_A = Score_A+1;
+              pause<=1;
+            end
+	    State <= CHECK_TIME_STATE;
+          end
+
+        else
+	 if(Flag_B ==1)
+           begin 
+           if (B == reg_Q)
+             begin
+               Addpoints_B <=1; //to make Score_B = Score_B + 1;
+               pause<=1;
+             end
+	     State <= CHECK_TIME_STATE;
+	  end
+	Flag_A <=0; 
+	Flag_B<=0;
+       end
+
+
+// ---- STATE 12: MAX SCore or TIME out --
+
+      CHECK_TIME_STATE:
+          begin
+            Addpoints_A <=0;
+            Addpoints_B <=0;
+            if (Score_A == 4'b 1111 || Score_B == 4'b 1111|| timeover == 1)
+              begin
+               State<=RESTART_STATE;
+	        GameOver<=1;
+		GetMaxScore<=1;
+              end
+            else
+              begin
+               State<=START_STATE;
+              end
+           end             
+
+     default:
+       begin
+        State <= INIT;
+       end
+endcase
+end
+end
+endmodule
